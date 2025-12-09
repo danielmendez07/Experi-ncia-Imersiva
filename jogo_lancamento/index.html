@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Lançamento de Bola com A-Frame</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script>
+    AFRAME.registerComponent('grab-and-throw', {
+      schema: {
+        start: {type: 'vec3', default: {x: 0, y: 1.05, z: 0}},
+        grabDuration: {type: 'int', default: 1500},
+        throwDistance: {type: 'number', default: 18}
+      },
+      init() {
+        this.camera = document.querySelector('#player');
+        this.cursor = document.querySelector('#crosshair');
+        this.msgEl = document.querySelector('#throw-msg'); // elemento de mensagem
+        this.state = 'ready';
+        this.throwTimer = null;
+        this.initial = new THREE.Vector3(this.data.start.x, this.data.start.y, this.data.start.z);
+        this.el.addEventListener('click', () => {
+          if (this.state !== 'ready') return;
+          this.state = 'grabbing';
+          this.startGrab();
+        });
+      },
+      startGrab() {
+        const camObj = this.camera.object3D;
+        const targetPos = new THREE.Vector3();
+        camObj.getWorldPosition(targetPos);
+        const forward = new THREE.Vector3();
+        camObj.getWorldDirection(forward);
+        forward.normalize();
+        targetPos.add(forward.clone().multiplyScalar(0.4)).add(new THREE.Vector3(0, -0.15, 0));
+
+        this.el.removeAttribute('animation__throw');
+        this.el.setAttribute('animation__grab', {
+          property: 'position',
+          to: `${targetPos.x} ${targetPos.y} ${targetPos.z}`,
+          dur: this.data.grabDuration,
+          easing: 'easeOutCubic'
+        });
+
+        clearTimeout(this.throwTimer);
+        this.throwTimer = setTimeout(() => this.throwBall(), this.data.grabDuration);
+      },
+      throwBall() {
+        const camObj = this.camera.object3D;
+        const startPos = new THREE.Vector3();
+        camObj.getWorldPosition(startPos);
+        const forward = new THREE.Vector3();
+        const ray = this.cursor && this.cursor.components.raycaster && this.cursor.components.raycaster.ray;
+        if (ray && ray.direction) {
+          forward.copy(ray.direction).normalize();
+        } else {
+          camObj.getWorldDirection(forward).normalize();
+        }
+
+        const throwDir = forward.clone().negate();
+        startPos.add(forward.clone().multiplyScalar(0.4));
+        const endPos = startPos.clone().add(throwDir.multiplyScalar(this.data.throwDistance));
+
+        this.el.setAttribute('position', `${startPos.x} ${startPos.y} ${startPos.z}`);
+        this.el.removeAttribute('animation__grab');
+        this.el.setAttribute('animation__throw', {
+          property: 'position',
+          to: `${endPos.x} ${endPos.y} ${endPos.z}`,
+          dur: 700,
+          easing: 'easeOutQuad'
+        });
+
+        this.state = 'thrown';
+
+        // Mostrar a mensagem quando a bola for lançada
+        this.showThrowMessage();
+
+        setTimeout(() => this.resetBall(), 900);
+      },
+      showThrowMessage() {
+        if (!this.msgEl) return;
+        // garante escala inicial pequena
+        this.msgEl.setAttribute('scale', '0.6 0.6 0.6');
+        this.msgEl.setAttribute('visible', 'true');
+        // anima "pop"
+        this.msgEl.setAttribute('animation__pop', 'property: scale; from: 0.6 0.6 0.6; to: 1 1 1; dur: 300; easing: easeOutBack');
+        // opcional: anima opacidade (se quiser)
+        this.msgEl.setAttribute('animation__fadein', 'property: material.opacity; from: 0; to: 1; dur: 250');
+
+        // esconde depois de 2s
+        clearTimeout(this._hideMsgTimer);
+        this._hideMsgTimer = setTimeout(() => {
+          // desaparece com animação, depois esconde
+          this.msgEl.setAttribute('animation__fadeout', 'property: material.opacity; from: 1; to: 0; dur: 400; easing: easeInQuad');
+          setTimeout(() => {
+            this.msgEl.setAttribute('visible', 'false');
+            // limpar animações para evitar efeitos futuros indesejados
+            this.msgEl.removeAttribute('animation__pop');
+            this.msgEl.removeAttribute('animation__fadein');
+            this.msgEl.removeAttribute('animation__fadeout');
+          }, 420);
+        }, 2000);
+      },
+      resetBall() {
+        this.el.removeAttribute('animation__throw');
+        this.el.removeAttribute('animation__grab');
+        this.el.setAttribute('position', `${this.initial.x} ${this.initial.y} ${this.initial.z}`);
+        this.state = 'ready';
+      }
+    });
+  </script>
+</head>
+<body>
+  <a-scene>
+    <a-entity id="player" camera look-controls position="0 1.6 4">
+      <!-- Mensagem fixa à câmera (inicialmente invisível) -->
+      <a-entity id="throw-msg"
+                visible="false"
+                scale="0.6 0.6 0.6"
+                position="0 -0.2 -1.2"
+                material="shader: flat; opacity: 0"
+                text="value: Nice throw; align: center; color: #ffffff; width: 1.8">
+      </a-entity>
+
+      <a-entity id="crosshair"
+                cursor="fuse: true; fuseTimeout: 2000"
+                raycaster="objects: #ball"
+                geometry="primitive: ring; radiusInner: 0.004; radiusOuter: 0.007"
+                material="color: white; shader: flat"
+                position="0 0 -0.5">
+      </a-entity>
+    </a-entity>
+
+    <a-entity id="table" position="0 0.75 0">
+      <a-box width="3" height="0.15" depth="2" color="#8B5A2B"></a-box>
+      <a-box width="0.15" height="1.5" depth="0.15" position="-1.3 -0.825 -0.9" color="#6E4420"></a-box>
+      <a-box width="0.15" height="1.5" depth="0.15" position="1.3 -0.825 -0.9" color="#6E4420"></a-box>
+      <a-box width="0.15" height="1.5" depth="0.15" position="-1.3 -0.825 0.9" color="#6E4420"></a-box>
+      <a-box width="0.15" height="1.5" depth="0.15" position="1.3 -0.825 0.9" color="#6E4420"></a-box>
+    </a-entity>
+
+    <a-sphere id="ball"
+              position="0 1.05 0"
+              radius="0.15"
+              color="#F2B705"
+              shadow="cast: true"
+              grab-and-throw>
+    </a-sphere>
+
+    <!-- Fundo azul -->
+    <a-plane id="bg-blue"
+            position="0 4 -13"
+            width="10"
+            height="10"
+            color="#0000ff">
+    </a-plane>
+
+    <!-- Círculo amarelo (menor) -->
+    <a-circle id="yellow-circle"
+            position="0 4 -12"
+            radius="1.5"
+            color="#fdd835">
+    </a-circle>
+
+    <!-- Círculo vermelho (menor ainda) -->
+    <a-circle id="red-circle"
+            position="0 4 -11"
+            radius="0.9"
+            color="#d32f2f">
+    </a-circle>
+
+    <a-sky color="#87cdee"></a-sky>
+    <a-entity light="type: directional; intensity: 0.9" position="1 3 2"></a-entity>
+    <a-entity light="type: ambient; intensity: 0.4"></a-entity>
+  </a-scene>
+</body>
+</html>
